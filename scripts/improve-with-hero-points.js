@@ -50,23 +50,65 @@
 const DEGREE_STRINGS = ["criticalFailure", "failure", "success", "criticalSuccess"];
 const DEGREE_LABELS = ["Critical Failure", "Failure", "Success", "Critical Success"];
 
+// TEMPORARY: verbose diagnostics while chasing why the menu options don't
+// appear at all in play, despite the patch itself applying without error.
+// Logs the specific reason getContextForLi rejected a message, once per
+// right-click (not once per Hero Point tier) via a short-lived cache keyed
+// on message id, so opening one context menu doesn't log the same reason 3x.
+const DEBUG_PREFIX = "phil-pf2e-hero-points |";
+let lastLoggedMessageId = null;
+
 function getContextForLi(li) {
-  const message = game.messages.get(li?.dataset?.messageId);
-  if (!message) return null;
+  const messageId = li?.dataset?.messageId;
+  const shouldLog = messageId && messageId !== lastLoggedMessageId;
+  if (shouldLog) lastLoggedMessageId = messageId;
+  const log = (reason, extra) => {
+    if (shouldLog) console.log(DEBUG_PREFIX, "hidden:", reason, extra ?? "");
+  };
+
+  const message = game.messages.get(messageId);
+  if (!message) {
+    log("no message found for li.dataset.messageId", messageId);
+    return null;
+  }
 
   const actor = message.actor;
-  if (!actor?.isOwner) return null;
-  if (!(message.isAuthor || game.user.isGM)) return null;
+  if (!actor?.isOwner) {
+    log("actor missing or not owned", actor?.name);
+    return null;
+  }
+  if (!(message.isAuthor || game.user.isGM)) {
+    log("not message author and not GM");
+    return null;
+  }
 
   const rollContext = message.flags?.pf2e?.context;
-  if (!rollContext?.outcome) return null;
+  if (!rollContext?.outcome) {
+    log("no flags.pf2e.context.outcome on this message -- likely no target/DC was set for this roll", rollContext);
+    return null;
+  }
 
   const currentDegree = DEGREE_STRINGS.indexOf(rollContext.outcome);
-  if (currentDegree === -1 || currentDegree >= 3) return null; // already critical success
+  if (currentDegree === -1) {
+    log("context.outcome present but not a recognized degree string", rollContext.outcome);
+    return null;
+  }
+  if (currentDegree >= 3) {
+    log("already critical success/critical save, nothing to improve");
+    return null;
+  }
 
   const resource = actor.getResource?.("hero-points");
-  if (!resource) return null;
+  if (!resource) {
+    log("actor.getResource('hero-points') returned nothing -- resource slug may differ on this actor/system version");
+    return null;
+  }
+  if (resource.value <= 0) {
+    log("character has 0 Hero Points", resource);
+    return null;
+  }
 
+  if (shouldLog) console.log(DEBUG_PREFIX, "eligible:", { degree: DEGREE_LABELS[currentDegree], heroPoints: resource.value });
   return { message, actor, resource, currentDegree };
 }
 
@@ -129,7 +171,9 @@ Hooks.once("ready", () => {
   const chatLogClass = ui.chat?.constructor;
   if (!chatLogClass?.prototype?._getEntryContextOptions) {
     console.error(
-      "phil-pf2e-hero-points | Could not find ui.chat's _getEntryContextOptions to patch -- the Improve Result options will not appear.",
+      DEBUG_PREFIX,
+      "Could not find ui.chat's _getEntryContextOptions to patch -- the Improve Result options will not appear.",
+      { uiChat: ui.chat, constructorName: chatLogClass?.name },
     );
     return;
   }
@@ -153,4 +197,6 @@ Hooks.once("ready", () => {
     }
     return options;
   };
+
+  console.log(DEBUG_PREFIX, "Patched", chatLogClass.name + ".prototype._getEntryContextOptions successfully.");
 });
