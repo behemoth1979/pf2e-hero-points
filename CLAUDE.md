@@ -94,17 +94,49 @@ first thing to revisit; the mechanical parts (Hero Points spent, the
 either way, since downstream automation reading that flag would still
 see the right value.
 
-**Menu gating** (`getChatLogEntryContext` hook, standard Foundry
-chat-log context-menu hook — same one referenced in pf2e's own type
-definitions): each of the three options only appears when the message
+**Menu registration — corrected after live testing found it silently
+didn't work at all.** The first version used
+`Hooks.on("getChatLogEntryContext", ...)`, reasoning from that hook
+merely *existing* in Foundry's own type definitions
+(`types/foundry/client/helpers/hooks.d.mts`) — but never actually
+confirmed pf2e *calls* it. It doesn't: read pf2e's real
+`src/module/apps/sidebar/chat-log.ts` directly and found `class
+ChatLogPF2e extends fa.sidebar.tabs.ChatLog` completely *overrides*
+`_getEntryContextOptions()` — calling `super._getEntryContextOptions()`
+then pushing its own Reroll/Apply Damage/etc. entries directly in the
+override, never calling the generic hook at all. Anything relying on
+that hook alone silently never fires. **Lesson: confirm a hook is
+actually called by the system, not just that it's declared/typed
+somewhere, before building on it** — especially for chat-log/sidebar
+UI, which this system frequently replaces wholesale with its own
+`fa.sidebar.tabs.*`-extending classes rather than hooking the default.
+
+Fixed by wrapping the real method instead of hooking: `ui.chat` is the
+live `ChatLog` application instance (a stable Foundry global), so
+`ui.chat.constructor.prototype._getEntryContextOptions` is the actual
+`ChatLogPF2e` prototype method — patched at `Hooks.once("ready", ...)`
+(after the UI exists) to call the original and push three more
+entries. This is the standard way to extend one method on a class this
+module doesn't own, without an external dependency like libWrapper.
+
+**Entry shape was also wrong the first time**, assumed rather than
+checked: the older Foundry-version convention `{name, icon, condition,
+callback(li)}` doesn't apply here. Copied the real shape verbatim from
+pf2e's own entries in the same file (e.g. the actual
+`"PF2E.RerollMenu.HeroPoint"` entry): `label` (not `name`), `visible`
+(not `condition`), and `onClick(event, li)` (not `callback(li)`) — and
+`li` is confirmed always a raw `HTMLElement` in this Foundry version
+(`li.dataset.messageId` used directly in pf2e's own entries, no jQuery
+anywhere in that file), not sometimes-jQuery-wrapped as first assumed.
+
+**Menu gating** (inside the wrapped `_getEntryContextOptions`, not a
+hook): each of the three options only appears when the message
 belongs to a check/save roll the user can act on (actor owned, and
 `message.isAuthor || game.user.isGM`, mirroring
 `ChatMessagePF2e#isRerollable`'s own gating logic), the roll has a
 recorded `context.outcome` (so there's a degree to improve at all,
 and it isn't already critical success), and the acting character has
-at least that many Hero Points. Foundry's context-menu callbacks can
-receive either a raw `HTMLElement` or a jQuery-wrapped one depending
-on version — `getLiElement()` handles both rather than assuming one.
+at least that many Hero Points.
 
 ## Release process (how updates reach Forge)
 

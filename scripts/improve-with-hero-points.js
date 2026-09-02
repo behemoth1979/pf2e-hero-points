@@ -4,46 +4,54 @@
  * "Reroll a Check" options -- spend N Hero Points to raise the degree of
  * success by N steps, capped at critical success/critical save.
  *
- * Deliberately does NOT reimplement the system's own reroll pipeline
- * (Check#rerollFromMessage in src/module/system/check/check.ts) -- that
- * evaluates a brand new d20 roll and rebuilds the chat card with a custom
- * old/new side-by-side render, delete-and-recreating the message. This
- * doesn't need a new roll at all, just the existing roll's degree of
- * success moved up N steps, so instead it updates the same canonical
- * fields the built-in reroll updates (flags.pf2e.context.outcome, and the
- * roll's own options.degreeOfSuccess) and lets Foundry's standard
- * document-update re-render handle the chat card display -- lower risk
- * than trying to blind-replicate the system's own custom rendering, at
- * the cost of not visually showing an old-vs-new comparison the way a
- * real reroll does. A flavor-text note is added either way so the change
- * is clearly visible regardless of how the card itself re-renders.
+ * FIRST ATTEMPT AT THIS SCRIPT USED THE WRONG MECHANISM ENTIRELY, fixed
+ * after live testing showed literally no new context menu options
+ * appeared at all. Root cause, confirmed by downloading and reading pf2e's
+ * actual src/module/apps/sidebar/chat-log.ts directly (not guessed, not
+ * inferred from a generic Foundry hook's existence in the type
+ * definitions): pf2e does NOT populate its chat message context menu via
+ * the generic Hooks.on("getChatLogEntryContext", ...) hook. It replaces
+ * Foundry's default chat log with its own class (`class ChatLogPF2e
+ * extends fa.sidebar.tabs.ChatLog`) and directly *overrides*
+ * `_getEntryContextOptions()`, building the entire entries array itself
+ * (calling `super._getEntryContextOptions()` then pushing its own Reroll/
+ * Apply Damage/etc. entries) -- it never calls the generic hook at all, so
+ * anything relying on that hook silently never fires for pf2e messages.
  *
- * Confirmed against real pf2e source before use, not guessed:
- * - Check is genuinely exposed at game.pf2e.Check (src/scripts/
- *   set-game-pf2e.ts), though this script doesn't call into it directly
- *   for the reasons above.
- * - actor.updateResource(slug, newValue) is the actual API the system's
- *   own reroll uses to spend Hero Points (resource.slug is "hero-points").
- * - Degree of success is encoded 0-3 (criticalFailure/failure/success/
- *   criticalSuccess) and stored in both flags.pf2e.context.outcome (a
- *   string) and the roll's own options.degreeOfSuccess (a number) --
- *   confirmed by reading rerollFromMessage's own update logic, where both
- *   are set together from the same computed degree.
+ * The fix: don't hook, wrap the actual method (the standard way to extend
+ * a class method from a separate module without owning the class) --
+ * `ui.chat` is the live ChatLog application instance (a stable, standard
+ * Foundry global), so `ui.chat.constructor.prototype._getEntryContextOptions`
+ * is the real ChatLogPF2e prototype method, patched at the "ready" hook
+ * (after the UI exists) to call the original then push three more entries.
+ *
+ * Also corrected the entry shape itself, copied verbatim from pf2e's own
+ * real entries (e.g. the "PF2E.RerollMenu.HeroPoint" one) rather than the
+ * older-Foundry-version {name, icon, condition, callback} shape assumed
+ * the first time: this Foundry version's ContextMenuEntry uses `label`
+ * (not `name`), `visible` (not `condition`, and it's a plain function, not
+ * wrapped), and `onClick(event, li)` (not `callback(li)`) -- and `li` is
+ * always a raw HTMLElement here, never jQuery-wrapped, confirmed the same
+ * way (`li.dataset.messageId` used directly in pf2e's own entries, no
+ * jQuery unwrapping anywhere in that file).
+ *
+ * Everything about *what* gets updated when Hero Points are spent is
+ * unchanged from the first version and still applies: actor.updateResource
+ * ("hero-points", value - n) to spend the resource (the same API
+ * Check#rerollFromMessage itself uses), and flags.pf2e.context.outcome +
+ * the roll's own options.degreeOfSuccess as the two canonical fields that
+ * change together. Whether the chat card's own success/failure styling
+ * fully re-renders from a plain document update (vs. needing the
+ * delete-and-recreate approach the real reroll uses) is still unverified
+ * without a live session -- the flavor-text note is still added
+ * unconditionally so the change is visible either way.
  */
 
 const DEGREE_STRINGS = ["criticalFailure", "failure", "success", "criticalSuccess"];
 const DEGREE_LABELS = ["Critical Failure", "Failure", "Success", "Critical Success"];
 
-function getLiElement(li) {
-  // Foundry's context-menu condition/callback receives either a raw
-  // HTMLElement or a jQuery-wrapped one depending on version; handle both.
-  return li instanceof HTMLElement ? li : li[0];
-}
-
 function getContextForLi(li) {
-  const element = getLiElement(li);
-  const messageId = element?.dataset?.messageId;
-  const message = messageId ? game.messages.get(messageId) : null;
+  const message = game.messages.get(li?.dataset?.messageId);
   if (!message) return null;
 
   const actor = message.actor;
@@ -117,20 +125,32 @@ async function improveResult(message, steps) {
   );
 }
 
-Hooks.on("getChatLogEntryContext", (_html, options) => {
-  for (const steps of [1, 2, 3]) {
-    options.push({
-      name: `Improve Result by ${steps} (${steps} Hero Point${steps > 1 ? "s" : ""})`,
-      icon: '<i class="fa-solid fa-hospital-symbol"></i>',
-      condition: (li) => {
-        const info = getContextForLi(li);
-        return !!info && info.resource.value >= steps;
-      },
-      callback: (li) => {
-        const element = getLiElement(li);
-        const message = game.messages.get(element?.dataset?.messageId);
-        if (message) improveResult(message, steps);
-      },
-    });
+Hooks.once("ready", () => {
+  const chatLogClass = ui.chat?.constructor;
+  if (!chatLogClass?.prototype?._getEntryContextOptions) {
+    console.error(
+      "phil-pf2e-hero-points | Could not find ui.chat's _getEntryContextOptions to patch -- the Improve Result options will not appear.",
+    );
+    return;
   }
+
+  const original = chatLogClass.prototype._getEntryContextOptions;
+  chatLogClass.prototype._getEntryContextOptions = function (...args) {
+    const options = original.apply(this, args);
+    for (const steps of [1, 2, 3]) {
+      options.push({
+        label: `Improve Result by ${steps} (${steps} Hero Point${steps > 1 ? "s" : ""})`,
+        icon: "fa-solid fa-hospital-symbol",
+        visible: (li) => {
+          const info = getContextForLi(li);
+          return !!info && info.resource.value >= steps;
+        },
+        onClick: (_event, li) => {
+          const message = game.messages.get(li?.dataset?.messageId);
+          if (message) improveResult(message, steps);
+        },
+      });
+    }
+    return options;
+  };
 });
