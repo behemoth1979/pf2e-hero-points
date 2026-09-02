@@ -42,6 +42,19 @@ incoming attack) or the character whose spell/effect provoked the save
 caster (e.g. a monster's own persistent-damage recovery check) won't
 offer this option.
 
+## Hourly Hero Point grant
+
+While a GM client has the world open, every player character
+automatically gains 1 Hero Point (up to their max) on the hour,
+real-world time — e.g. connecting at 2:37 grants the first point at
+3:00, then again at 4:00, 5:00, and so on. A chat message announces
+who received a point each time (or that everyone's already at max).
+
+This only runs on the GM's client, so it fires once per hour regardless
+of how many players are connected, and it simply doesn't fire if no GM
+has the world open when an hour rolls over — no catch-up on reconnect.
+Toggle it off in **Configure Settings** → **Hourly Hero Point Grant**.
+
 ## Install
 
 1. Copy this folder into `Data/modules/phil-pf2e-hero-points/`.

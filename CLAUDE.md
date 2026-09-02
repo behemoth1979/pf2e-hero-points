@@ -252,6 +252,63 @@ recorded `context.outcome` (so there's a degree to improve at all,
 and it isn't already critical success), and the acting character has
 at least that many Hero Points.
 
+## House rule: hourly Hero Point grant
+
+`scripts/hourly-hero-point.js` — second script file in this module,
+separate from `improve-with-hero-points.js` since it's an entirely
+independent house rule (a passive timer, not a chat-message
+interaction) with its own settings registration. Every player
+character actor (`hasPlayerOwner && type === "character"`) gains 1
+Hero Point on the real-world hour, for as long as a GM client has the
+world open.
+
+**GM-only by explicit design, not an incidental restriction**: the
+`Hooks.once("ready", ...)` handler returns immediately if
+`!game.user.isGM`, so the timer is only ever running on the GM's own
+client. This is what makes "once per hour" actually true regardless of
+how many players are connected simultaneously — if every client ran
+its own timer, a 4-player table would post 4 duplicate chat messages
+and grant points 4x. This mirrors the same "exactly one client should
+act" concern `aeon-stone-healing.js` in the sibling `pf2e-weredragon`
+module solves with `actor.primaryUpdater !== game.user` — but here the
+constraint is simpler (only the GM should ever run this at all, not
+"whichever client happens to own the actor"), so a flat `isGM` check
+is sufficient and no primary-updater check is needed.
+
+**Setting registered at `init`, gating logic runs at `ready`** — per
+Foundry convention (and per how `game.settings.register` is documented
+to be used), registration happens as early as possible so the setting
+exists before anything might read it or render a config UI for it; the
+actual GM-only scheduling decision happens later at `ready`, per the
+user's own explicit requirement, since it needs the game and its
+settings to be fully loaded before deciding whether to start the
+timer.
+
+**Scheduling**: aligns the first tick to the next wall-clock
+top-of-hour via a single `setTimeout` (`Date#setMinutes(60, 0, 0)` is
+the concise way to compute "the next hour boundary" — passing 60 as
+the minutes argument rolls the `Date` over into the next hour
+automatically, rather than needing an explicit `+1` on the hours field
+and a separate check for a 23→0 day rollover), then chains a plain
+`setInterval` at exactly 60 real minutes once that first tick fires.
+No drift correction beyond that initial alignment and no catch-up
+logic for a missed hour while offline — both explicitly out of scope
+per the user's own requirements, not oversights. A `setInterval` left
+running for very long real-world sessions will drift slightly from the
+true wall-clock hour over time (typical `setInterval` behavior, not
+specific to this script), which was accepted as fine given "no
+drift-correction needed" was explicit in the ask.
+
+**Actor update reuses `actor.updateResource("hero-points", newValue)`**
+— the exact same API `improve-with-hero-points.js` already uses to
+spend the resource — rather than a raw `actor.update()` against the
+nested `system.resources.heroPoints.value` path, so this grant goes
+through whatever resource-update handling pf2e's own actor document
+does, instead of bypassing it with a direct data-path write. The
+*read* side does use the raw `actor.system.resources.heroPoints`
+path directly (checking `.value` against `.max ?? 3`), per the user's
+own explicit specification.
+
 ## Release process (how updates reach Forge)
 
 Same as `pf2e-weredragon`: Forge auto-updates via `module.json`'s
