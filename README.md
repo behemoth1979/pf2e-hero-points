@@ -13,9 +13,8 @@ Which options appear depends on the roll's current result:
 - **Success** → spend 1 Hero Point to make it a critical success.
 - **Failure/miss** → spend 1 to make it a hit, or 2 to make it a
   critical hit.
-- **Critical failure/critical miss** → spend 3 to turn it all the way
-  around into a critical success. (No partial 1- or 2-point recovery
-  from a critical failure — it's all or nothing.)
+- **Critical failure/critical miss** → spend 1 to make it a failure/
+  miss, 2 to make it a success/hit, or 3 to make it a critical success.
 
 Only shows up when there's a result to improve (the roll needs a
 target/DC set) and the acting character has enough Hero Points for
@@ -28,9 +27,8 @@ rolls made *against* you — an enemy's attack roll targeting your
 character, or an enemy's saving throw against your own spell/effect.
 Spend your Hero Points to push their result down instead:
 
-- **Critical hit against you** → spend 3 to turn it all the way around
-  into a critical miss (all or nothing, same as the critical-failure
-  case above).
+- **Critical hit against you** → spend 1 to make it a hit, 2 to make it
+  a miss, or 3 to make it a critical miss.
 - **Hit against you** → spend 1 to make it a miss, or 2 to make it a
   critical miss.
 - **Miss against you** → spend 1 to make it a critical miss.

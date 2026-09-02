@@ -64,23 +64,29 @@ table (not a general "spend N for N steps" rule) — see
 |---|---|
 | Success | 1 point → critical success |
 | Failure/miss | 1 point → success/hit, or 2 points → critical success/hit |
-| Critical failure/critical miss | 3 points → critical success (all-or-nothing; no 1- or 2-point partial recovery) |
+| Critical failure/critical miss | 1 point → failure/miss, 2 points → success/hit, or 3 points → critical success |
 
-The asymmetry on critical failure is deliberate, not an oversight: the
-user explicitly wants only the full 3-point turnaround offered from a
-critical failure, not the 1- or 2-point partial improvements that
-would otherwise be mechanically consistent with the other rows.
+**Revised after live play**: critical failure/critical miss originally
+offered *only* the 3-point all-or-nothing option, by explicit user
+request (confirmed at the time — see the git history for the original
+ask). Live testing showed this was wrong in practice — the user wanted
+1 and 2 available there too, same as every other row except Success
+(which stays 1-point-only, since 2/3 would just waste points reaching
+the same critical success). Only that one row is still asymmetric; the
+rest of the table is a plain "N points = N degrees up" now.
 
 ## House rule: worsen an incoming attack or enemy save with Hero Points
 
 Same script, same right-click menu, opposite direction: spend Hero
 Points to push *someone else's* roll against you down, instead of
 improving your own. `INCOMING_ALLOWED_STEPS_BY_DEGREE` is the exact
-mirror of `ALLOWED_STEPS_BY_DEGREE` above (crit hit against you → only
-3 points, all-or-nothing; hit against you → 1 or 2 points; miss
-against you → only 1 point) — the user asked to "apply the same
-logic," and confirmed via `AskUserQuestion` that this literal mirror
-(not a flat "N points = N degrees") was the intended table.
+mirror of `ALLOWED_STEPS_BY_DEGREE` above (crit hit against you → 1,
+2, or 3 points; hit against you → 1 or 2 points; miss against you →
+only 1 point) — the user asked to "apply the same logic," so when the
+critical-failure row of the improve table was revised to also offer 1
+and 2 (not just the original all-or-nothing 3), the critical-hit row
+here was revised the same way, on explicit request ("yes the mirror
+worsen conditions should be the same").
 
 **The hard part wasn't the table, it was finding whose Hero Points to
 spend and which message field identifies them**, since the roller of

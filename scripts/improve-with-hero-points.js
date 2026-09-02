@@ -97,22 +97,27 @@ const DEBUG_PREFIX = "phil-pf2e-hero-points |";
 // rule): only the step counts that make sense for the current degree are
 // offered -- a success can only be pushed to critical success (1 point;
 // 2 or 3 would do the same thing and just waste points), a failure can
-// go to a hit (1) or straight to a critical hit (2), and a critical
-// failure/critical miss only gets the single all-or-nothing option to
-// spend 3 and turn it all the way around to a critical success -- no
-// partial 1- or 2-point recovery from a critical failure.
+// go to a hit (1) or straight to a critical hit (2). A critical failure/
+// critical miss originally only offered the single 3-point option (no
+// partial 1- or 2-point recovery), but that was reverted after live play:
+// 1 and 2 should also be offered there (1 -> failure, 2 -> success), same
+// as every other row -- only the top row (success -> only 1 point, since
+// 2/3 would be redundant) stays asymmetric.
 const ALLOWED_STEPS_BY_DEGREE = {
-  0: [3], // critical failure/critical miss
+  0: [1, 2, 3], // critical failure/critical miss
   1: [1, 2], // failure/miss
   2: [1], // success/hit
 };
 
 // Mirror image of the table above, for worsening an incoming attack or an
-// enemy's save: a critical hit against you is only reversible all-or-nothing
-// (3 points -> critical failure), a hit can drop 1 or 2 degrees, and a miss
-// (already not too bad) can only drop the single remaining degree.
+// enemy's save. Originally a critical hit against you was only reversible
+// all-or-nothing (3 points -> critical failure), matching the same
+// asymmetric design the improve-your-own-roll table had -- reverted for
+// the same reason: 1 and 2 should also be offered there (1 -> hit, 2 ->
+// failure/miss), same as every other row except the bottom one (miss
+// against you -> only 1 point, since 2/3 would be redundant).
 const INCOMING_ALLOWED_STEPS_BY_DEGREE = {
-  3: [3], // critical success/critical hit (against you)
+  3: [1, 2, 3], // critical success/critical hit (against you)
   2: [1, 2], // success/hit (against you)
   1: [1], // failure/miss (against you)
 };
