@@ -1,9 +1,18 @@
 /**
- * House rule: every player character actor automatically gains 1 Hero
- * Point on the hour, real-world wall-clock time, for as long as a GM
- * client has the world open. GM-only -- players never run this timer,
- * so there's exactly one grant per hour regardless of how many clients
- * are connected.
+ * House rule: every character actor automatically gains 1 Hero Point on
+ * the hour, real-world wall-clock time, for as long as a GM client has
+ * the world open. GM-only -- players never run this timer, so there's
+ * exactly one grant per hour regardless of how many clients are
+ * connected.
+ *
+ * Filters actors on type === "character" alone, NOT hasPlayerOwner &&
+ * type === "character" as first built -- confirmed live that this
+ * table's PCs are both owned/played directly by the GM account rather
+ * than through separate player logins, so hasPlayerOwner (only true
+ * for non-GM Owner permission) was false for every real PC, and the
+ * original filter matched zero actors every single hour. type ===
+ * "character" alone still correctly excludes "npc" and "party" typed
+ * actors.
  *
  * Toggle: world setting "heroPointHourlyEnabled" (default on), so the
  * GM can turn this off without disabling the module entirely.
@@ -27,7 +36,14 @@
 const MODULE_ID = "phil-pf2e-hero-points";
 
 async function grantHourlyHeroPoints() {
-  const actors = game.actors.filter((a) => a.hasPlayerOwner && a.type === "character");
+  // type === "character" alone, not hasPlayerOwner && type === "character":
+  // confirmed live that this table's two PCs are both owned/played directly
+  // by the GM account rather than through separate player logins, so
+  // hasPlayerOwner (which only counts non-GM Owner permission) is false for
+  // both and excluded every real PC from the original filter -- the grant
+  // silently ran over zero actors every hour. type === "character" alone
+  // still correctly excludes NPCs ("npc") and the party actor ("party").
+  const actors = game.actors.filter((a) => a.type === "character");
   const updatedNames = [];
 
   for (const actor of actors) {

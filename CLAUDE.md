@@ -257,10 +257,28 @@ at least that many Hero Points.
 `scripts/hourly-hero-point.js` — second script file in this module,
 separate from `improve-with-hero-points.js` since it's an entirely
 independent house rule (a passive timer, not a chat-message
-interaction) with its own settings registration. Every player
-character actor (`hasPlayerOwner && type === "character"`) gains 1
-Hero Point on the real-world hour, for as long as a GM client has the
-world open.
+interaction) with its own settings registration. Every character actor
+(`type === "character"`) gains 1 Hero Point on the real-world hour,
+for as long as a GM client has the world open.
+
+**Filter bug found in play, first release (v0.1.5)**: originally
+`hasPlayerOwner && type === "character"`, matching the literal
+original spec. Live testing showed the hourly chat message always said
+"everyone already at max" even with two PCs below cap. Confirmed via
+console (`game.actors.contents.map(a => ({name: a.name, type: a.type,
+hasPlayerOwner: a.hasPlayerOwner}))`) that both real PCs on this table
+(Drengor, Vanilla) report `hasPlayerOwner: false` — this GM plays both
+characters directly under the GM account rather than through separate
+player logins, and `hasPlayerOwner` only counts *non-GM* users with
+explicit Owner permission, so it was false for every actor that
+mattered and the grant loop ran over zero actors, every hour, forever.
+Fixed by dropping the `hasPlayerOwner` check entirely — `type ===
+"character"` alone still correctly excludes `"npc"`- and `"party"`-
+typed actors, and is the right filter for this table's actual setup.
+**If this module is ever used on a table where players do log in with
+their own accounts, revisit whether `hasPlayerOwner` should come back**
+— dropping it here is a table-specific fix, not a general claim that
+the flag is unreliable everywhere.
 
 **GM-only by explicit design, not an incidental restriction**: the
 `Hooks.once("ready", ...)` handler returns immediately if
