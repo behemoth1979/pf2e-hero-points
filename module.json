@@ -9,6 +9,9 @@
     "minimum": "12",
     "verified": "14.366"
   },
+  "scripts": [
+    "scripts/improve-with-hero-points.js"
+  ],
   "packs": [],
   "relationships": {
     "systems": [

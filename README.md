@@ -1,10 +1,17 @@
 # Homebrew: Hero Points
 
 A Foundry VTT module (`phil-pf2e-hero-points`) for the Pathfinder 2e
-system, home to Hero Points house rules. Content not yet defined —
-this is a scaffold, tooling copied from the
-[pf2e-weredragon](https://github.com/behemoth1979/pf2e-weredragon)
-module.
+system, home to Hero Points house rules.
+
+## Improve a result with Hero Points
+
+Right-click a check or saving throw's chat message and, alongside the
+normal "Reroll a Check" options, you'll see **Improve Result by 1/2/3
+(Hero Point(s))**. Spending N Hero Points raises the roll's degree of
+success by N steps — miss → hit, hit → critical hit — capped at
+critical success/critical save, no reroll involved. Only shows up
+when there's a result to improve and the acting character has enough
+Hero Points.
 
 ## Install
 
