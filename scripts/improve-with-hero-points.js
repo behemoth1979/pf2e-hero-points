@@ -167,13 +167,32 @@ async function improveResult(message, steps) {
   );
 }
 
-Hooks.once("ready", () => {
-  const chatLogClass = ui.chat?.constructor;
+Hooks.once("init", () => {
+  // Patch at "init", not "ready": Foundry's ContextMenu captures the
+  // options array returned by _getEntryContextOptions() ONCE, into a
+  // plain instance property (`this.menuItems = menuItems` in
+  // client/applications/ux/context-menu.mjs), at the moment the chat
+  // log's ContextMenu is first constructed. Only each entry's `visible`
+  // callback is re-evaluated per right-click after that -- the array
+  // itself is never rebuilt. That construction happens very early
+  // (before "ready" fires), so patching at "ready" edits the prototype
+  // method too late: the live ContextMenu instance already has its
+  // menuItems frozen from the original, unpatched method, and our
+  // three pushed entries never make it in even though calling
+  // ui.chat._getEntryContextOptions() by hand afterward correctly
+  // includes them (confirmed live: that direct call returns all three,
+  // but they never appeared in the actual right-click menu).
+  //
+  // CONFIG.ui.chat is the class reference pf2e registers for this
+  // purpose, available at "init" before Foundry ever instantiates
+  // ui.chat or builds its ContextMenu -- patching this prototype here
+  // guarantees our wrapper runs during that first construction.
+  const chatLogClass = CONFIG.ui?.chat;
   if (!chatLogClass?.prototype?._getEntryContextOptions) {
     console.error(
       DEBUG_PREFIX,
-      "Could not find ui.chat's _getEntryContextOptions to patch -- the Improve Result options will not appear.",
-      { uiChat: ui.chat, constructorName: chatLogClass?.name },
+      "Could not find CONFIG.ui.chat's _getEntryContextOptions to patch -- the Improve Result options will not appear.",
+      { configUiChat: CONFIG.ui?.chat, constructorName: chatLogClass?.name },
     );
     return;
   }

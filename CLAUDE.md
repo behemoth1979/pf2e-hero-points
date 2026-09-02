@@ -129,6 +129,51 @@ pf2e's own entries in the same file (e.g. the actual
 (`li.dataset.messageId` used directly in pf2e's own entries, no jQuery
 anywhere in that file), not sometimes-jQuery-wrapped as first assumed.
 
+**Third bug, the real one — patched at the wrong hook.** After the two
+fixes above, the wrapped method was confirmed live and correct
+(inspecting `ui.chat.constructor.prototype._getEntryContextOptions.
+toString()` in the browser console showed our wrapper, and calling
+`ui.chat._getEntryContextOptions().map(o => o.label)` directly
+returned all three "Improve Result" entries) — yet the actual
+right-click menu never showed them, and not even our diagnostic
+logging (attached to each entry's own `visible()` callback) ever ran.
+Root cause, found by pulling Foundry's own core
+`client/applications/ux/context-menu.mjs` directly off this module's
+target server via SSH (not guessed, not found in any docs): `class
+ContextMenu`'s constructor does `this.menuItems = menuItems` —a
+**plain instance property, captured once, at construction time**.
+`#renderEntries()` (called on every right-click) re-evaluates each
+entry's `visible()` callback against `this.#target`, but it never
+calls `_getEntryContextOptions()` again to rebuild `this.menuItems`
+itself. Whatever array existed when the chat log's `ContextMenu`
+instance was originally built is what's shown, forever after — no
+matter how many times the underlying method gets re-patched later.
+
+That first construction happens very early — well before `ready`
+fires, confirmed by grepping pf2e's own compiled `pf2e.mjs` for
+`CONFIG.ui.chat =`, which is set inside pf2e's own `init` hook
+handler (immediately after its `"PF2e System | Initializing..."` log
+line) — so patching at `Hooks.once("ready", ...)` genuinely is too
+late: `CONFIG.ui.chat`'s prototype gets patched correctly, but the
+live `ui.chat` instance's `ContextMenu` was already constructed from
+the *original* method by then.
+
+**Fix**: patch at `Hooks.once("init", ...)` instead, using
+`CONFIG.ui.chat` (the class reference) rather than waiting for the
+`ui.chat` instance to exist. Foundry always runs the active system's
+`init` hook before any module's `init` hook, so `CONFIG.ui.chat` is
+guaranteed already assigned by pf2e when this module's `init` hook
+runs — patching the prototype there guarantees our wrapper is what
+runs the first time Foundry ever builds the chat log's `ContextMenu`.
+**Lesson, layered on top of the "confirm a hook is actually called"
+one above: confirming a patched method returns the right thing when
+called manually is not the same as confirming the *live UI* is using
+that patched method** — some Foundry UI pieces (`ContextMenu` here)
+snapshot a method's return value once at construction rather than
+calling the method fresh on every use, so patch timing relative to
+that construction matters as much as patching the right method at
+all.
+
 **Menu gating** (inside the wrapped `_getEntryContextOptions`, not a
 hook): each of the three options only appears when the message
 belongs to a check/save roll the user can act on (actor owned, and
