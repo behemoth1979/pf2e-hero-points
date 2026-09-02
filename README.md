@@ -6,12 +6,20 @@ system, home to Hero Points house rules.
 ## Improve a result with Hero Points
 
 Right-click a check or saving throw's chat message and, alongside the
-normal "Reroll a Check" options, you'll see **Improve Result by 1/2/3
-(Hero Point(s))**. Spending N Hero Points raises the roll's degree of
-success by N steps — miss → hit, hit → critical hit — capped at
-critical success/critical save, no reroll involved. Only shows up
-when there's a result to improve and the acting character has enough
-Hero Points.
+normal "Reroll a Check" options, you'll see an **Improve Result**
+option — no reroll involved, just the existing result pushed up.
+Which options appear depends on the roll's current result:
+
+- **Success** → spend 1 Hero Point to make it a critical success.
+- **Failure/miss** → spend 1 to make it a hit, or 2 to make it a
+  critical hit.
+- **Critical failure/critical miss** → spend 3 to turn it all the way
+  around into a critical success. (No partial 1- or 2-point recovery
+  from a critical failure — it's all or nothing.)
+
+Only shows up when there's a result to improve (the roll needs a
+target/DC set) and the acting character has enough Hero Points for
+that option.
 
 ## Install
 

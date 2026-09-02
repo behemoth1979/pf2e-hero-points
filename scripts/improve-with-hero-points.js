@@ -56,6 +56,20 @@ const DEGREE_STRINGS = ["criticalFailure", "failure", "success", "criticalSucces
 const DEGREE_LABELS = ["Critical Failure", "Failure", "Success", "Critical Success"];
 const DEBUG_PREFIX = "phil-pf2e-hero-points |";
 
+// House rule (per the table, not a general "spend N to move up N steps"
+// rule): only the step counts that make sense for the current degree are
+// offered -- a success can only be pushed to critical success (1 point;
+// 2 or 3 would do the same thing and just waste points), a failure can
+// go to a hit (1) or straight to a critical hit (2), and a critical
+// failure/critical miss only gets the single all-or-nothing option to
+// spend 3 and turn it all the way around to a critical success -- no
+// partial 1- or 2-point recovery from a critical failure.
+const ALLOWED_STEPS_BY_DEGREE = {
+  0: [3], // critical failure/critical miss
+  1: [1, 2], // failure/miss
+  2: [1], // success/hit
+};
+
 function getContextForLi(li) {
   const messageId = li?.dataset?.messageId;
   const message = messageId ? game.messages.get(messageId) : null;
@@ -171,7 +185,8 @@ Hooks.once("init", () => {
         icon: "fa-solid fa-hospital-symbol",
         visible: (li) => {
           const info = getContextForLi(li);
-          return !!info && info.resource.value >= steps;
+          if (!info) return false;
+          return (ALLOWED_STEPS_BY_DEGREE[info.currentDegree] ?? []).includes(steps) && info.resource.value >= steps;
         },
         onClick: (_event, li) => {
           const message = game.messages.get(li?.dataset?.messageId);

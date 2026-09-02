@@ -54,9 +54,22 @@ Hero Point option is only "spend 1 to reroll and keep the second
 result" (`Check.rerollFromMessage` in the pf2e system's
 `src/module/system/check/check.ts`, exposed at `game.pf2e.Check`).
 This house rule adds a second option to the same right-click chat
-context menu: spend N Hero Points (1/2/3) to move the roll's existing
-degree of success up N steps directly — miss→hit, hit→crit, etc. —
-capped at critical success, without rerolling any dice.
+context menu: spend Hero Points to move the roll's existing degree of
+success up, directly, without rerolling any dice. Which spend amounts
+are offered depends on the roll's *current* degree, per the user's own
+table (not a general "spend N for N steps" rule) — see
+`ALLOWED_STEPS_BY_DEGREE` in the script:
+
+| Current result | Options offered |
+|---|---|
+| Success | 1 point → critical success |
+| Failure/miss | 1 point → success/hit, or 2 points → critical success/hit |
+| Critical failure/critical miss | 3 points → critical success (all-or-nothing; no 1- or 2-point partial recovery) |
+
+The asymmetry on critical failure is deliberate, not an oversight: the
+user explicitly wants only the full 3-point turnaround offered from a
+critical failure, not the 1- or 2-point partial improvements that
+would otherwise be mechanically consistent with the other rows.
 
 **Why this doesn't call into `game.pf2e.Check.rerollFromMessage` or
 copy its full implementation**: that method (read in full before
@@ -82,17 +95,9 @@ note announcing the change is always added regardless, so the effect
 is visible even if the card's own styling doesn't fully react to the
 data change.
 
-**Known unverified risk**: whether the pf2e chat card template
-re-derives its degree-of-success color/label purely from those two
-fields on a plain document update (vs. needing something the delete
--and-recreate reroll flow uniquely provides) hasn't been confirmed
-live — there was no way to test this without a running Foundry
-session. If the flavor-text note appears but the card's own
-success/failure styling doesn't visually update to match, that's the
-first thing to revisit; the mechanical parts (Hero Points spent, the
-`context.outcome` flag actually changed) should still be correct
-either way, since downstream automation reading that flag would still
-see the right value.
+**Confirmed working live** (2026-09-02, after the context-menu timing
+fix below): the plain document update approach is sufficient — no need
+for pf2e's delete-and-recreate reroll pipeline.
 
 **Menu registration — corrected after live testing found it silently
 didn't work at all.** The first version used
