@@ -20,10 +20,15 @@
  *
  * The fix: don't hook, wrap the actual method (the standard way to extend
  * a class method from a separate module without owning the class) --
- * `ui.chat` is the live ChatLog application instance (a stable, standard
- * Foundry global), so `ui.chat.constructor.prototype._getEntryContextOptions`
- * is the real ChatLogPF2e prototype method, patched at the "ready" hook
- * (after the UI exists) to call the original then push three more entries.
+ * `CONFIG.ui.chat` is the ChatLogPF2e class reference pf2e registers, so
+ * `CONFIG.ui.chat.prototype._getEntryContextOptions` is the real prototype
+ * method, patched at the "init" hook to call the original then push three
+ * more entries. (Patching at "ready" instead of "init" was a second,
+ * separate bug: Foundry's ContextMenu snapshots the entries array once,
+ * at the moment the chat log's menu is first built -- which happens
+ * before "ready" fires -- so a "ready"-time patch never took effect on
+ * the live menu even though it worked when called directly. See CLAUDE.md
+ * for the full writeup.)
  *
  * Also corrected the entry shape itself, copied verbatim from pf2e's own
  * real entries (e.g. the "PF2E.RerollMenu.HeroPoint" one) rather than the
@@ -49,66 +54,26 @@
 
 const DEGREE_STRINGS = ["criticalFailure", "failure", "success", "criticalSuccess"];
 const DEGREE_LABELS = ["Critical Failure", "Failure", "Success", "Critical Success"];
-
-// TEMPORARY: verbose diagnostics while chasing why the menu options don't
-// appear at all in play, despite the patch itself applying without error.
-// Logs the specific reason getContextForLi rejected a message, once per
-// right-click (not once per Hero Point tier) via a short-lived cache keyed
-// on message id, so opening one context menu doesn't log the same reason 3x.
 const DEBUG_PREFIX = "phil-pf2e-hero-points |";
-let lastLoggedMessageId = null;
 
 function getContextForLi(li) {
   const messageId = li?.dataset?.messageId;
-  const shouldLog = messageId && messageId !== lastLoggedMessageId;
-  if (shouldLog) lastLoggedMessageId = messageId;
-  const log = (reason, extra) => {
-    if (shouldLog) console.log(DEBUG_PREFIX, "hidden:", reason, extra ?? "");
-  };
-
-  const message = game.messages.get(messageId);
-  if (!message) {
-    log("no message found for li.dataset.messageId", messageId);
-    return null;
-  }
+  const message = messageId ? game.messages.get(messageId) : null;
+  if (!message) return null;
 
   const actor = message.actor;
-  if (!actor?.isOwner) {
-    log("actor missing or not owned", actor?.name);
-    return null;
-  }
-  if (!(message.isAuthor || game.user.isGM)) {
-    log("not message author and not GM");
-    return null;
-  }
+  if (!actor?.isOwner) return null;
+  if (!(message.isAuthor || game.user.isGM)) return null;
 
   const rollContext = message.flags?.pf2e?.context;
-  if (!rollContext?.outcome) {
-    log("no flags.pf2e.context.outcome on this message -- likely no target/DC was set for this roll", rollContext);
-    return null;
-  }
+  if (!rollContext?.outcome) return null;
 
   const currentDegree = DEGREE_STRINGS.indexOf(rollContext.outcome);
-  if (currentDegree === -1) {
-    log("context.outcome present but not a recognized degree string", rollContext.outcome);
-    return null;
-  }
-  if (currentDegree >= 3) {
-    log("already critical success/critical save, nothing to improve");
-    return null;
-  }
+  if (currentDegree === -1 || currentDegree >= 3) return null; // already critical success/critical save
 
   const resource = actor.getResource?.("hero-points");
-  if (!resource) {
-    log("actor.getResource('hero-points') returned nothing -- resource slug may differ on this actor/system version");
-    return null;
-  }
-  if (resource.value <= 0) {
-    log("character has 0 Hero Points", resource);
-    return null;
-  }
+  if (!resource || resource.value <= 0) return null;
 
-  if (shouldLog) console.log(DEBUG_PREFIX, "eligible:", { degree: DEGREE_LABELS[currentDegree], heroPoints: resource.value });
   return { message, actor, resource, currentDegree };
 }
 
@@ -216,6 +181,4 @@ Hooks.once("init", () => {
     }
     return options;
   };
-
-  console.log(DEBUG_PREFIX, "Patched", chatLogClass.name + ".prototype._getEntryContextOptions successfully.");
 });
