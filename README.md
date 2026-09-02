@@ -21,6 +21,27 @@ Only shows up when there's a result to improve (the roll needs a
 target/DC set) and the acting character has enough Hero Points for
 that option.
 
+## Worsen an incoming attack or enemy save with Hero Points
+
+The same right-click menu also offers a **Worsen Result** option on
+rolls made *against* you — an enemy's attack roll targeting your
+character, or an enemy's saving throw against your own spell/effect.
+Spend your Hero Points to push their result down instead:
+
+- **Critical hit against you** → spend 3 to turn it all the way around
+  into a critical miss (all or nothing, same as the critical-failure
+  case above).
+- **Hit against you** → spend 1 to make it a miss, or 2 to make it a
+  critical miss.
+- **Miss against you** → spend 1 to make it a critical miss.
+
+This uses *your* character's Hero Points, not the attacker's/enemy's —
+it only appears if you own the character being attacked (for an
+incoming attack) or the character whose spell/effect provoked the save
+(for an incoming enemy save). An enemy save with no clearly-recorded
+caster (e.g. a monster's own persistent-damage recovery check) won't
+offer this option.
+
 ## Install
 
 1. Copy this folder into `Data/modules/phil-pf2e-hero-points/`.

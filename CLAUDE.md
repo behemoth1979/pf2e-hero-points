@@ -71,6 +71,70 @@ user explicitly wants only the full 3-point turnaround offered from a
 critical failure, not the 1- or 2-point partial improvements that
 would otherwise be mechanically consistent with the other rows.
 
+## House rule: worsen an incoming attack or enemy save with Hero Points
+
+Same script, same right-click menu, opposite direction: spend Hero
+Points to push *someone else's* roll against you down, instead of
+improving your own. `INCOMING_ALLOWED_STEPS_BY_DEGREE` is the exact
+mirror of `ALLOWED_STEPS_BY_DEGREE` above (crit hit against you → only
+3 points, all-or-nothing; hit against you → 1 or 2 points; miss
+against you → only 1 point) — the user asked to "apply the same
+logic," and confirmed via `AskUserQuestion` that this literal mirror
+(not a flat "N points = N degrees") was the intended table.
+
+**The hard part wasn't the table, it was finding whose Hero Points to
+spend and which message field identifies them**, since the roller of
+an incoming roll is never the person who should get to react to it —
+it's always someone else:
+
+- **attack-roll**: `context.target.actor` is the character being hit.
+  Confirmed against a real captured message (not guessed) — pulled
+  directly out of this world's own LevelDB message store over SSH,
+  since Foundry's LevelDB is grep-able plaintext for embedded JSON:
+  `context":{"type":"attack-roll",...,"target":{"actor":"Scene.
+  NUEDEFAULTSCENE0.Token.<id>.Actor.<id>",...}}`. This is a clean,
+  directly-resolvable UUID in every attack-roll message checked.
+- **saving-throw**: `context.origin.actor` is meant to hold the caster
+  whose spell/effect provoked the save. Confirmed two ways: (1)
+  `CheckContext.resolve()` in pf2e's own compiled source explicitly
+  reads `origin?.actor` when computing attacker/defender for the roll
+  (`let e = await super.resolve(), t = !!e.origin?.self, n = t ?
+  e.origin?.actor : e.target?.actor, ...`); (2) a real captured save
+  message where an NPC saved against persistent fire damage had
+  `context.origin: null` at the top level, but the *effect's source*
+  was still identifiable only through free-text roll options buried in
+  `context.options` (`"origin:treerazer"`, `"origin:trait:fiend"`,
+  etc.) — not through any clean, resolvable actor UUID. This
+  particular save type (a monster's own condition-recovery check) just
+  doesn't populate `context.origin.actor`, confirming it's genuinely
+  `null` sometimes, not merely unobserved. **The fix is to fail closed,
+  not guess**: `getIncomingContextForLi()` returns `null` (no menu
+  option offered) whenever `context.origin?.actor` is absent, rather
+  than trying to parse the `origin:*` roll-option strings as a
+  fallback. A real spell/effect-provoked save (the case this feature
+  is actually for) is expected to populate this field correctly, per
+  the `CheckContext.resolve()` source read above — this repo just
+  doesn't have a live example of one on hand to double-confirm against
+  real data the way the attack-roll case was confirmed.
+
+Both UUIDs are resolved with `fromUuidSync()` — safe to call
+synchronously here because `visible()`/`onClick()` context-menu
+callbacks are themselves synchronous, and every Scene/Token/Actor
+document referenced is already loaded in memory as part of the world's
+own collections regardless of which scene is currently viewed.
+
+**Gating differs by design from the "improve your own roll" case**:
+`getContextForLi()` requires `message.isAuthor || game.user.isGM`
+(matching pf2e's own reroll-option gating, since the roller *is* the
+relevant person there); `getIncomingContextForLi()` has no such check
+— `message.isAuthor` is meaningless here, since the message's author
+is always the attacker or the enemy roller, never the person this
+option is for. Ownership (`actor.isOwner`) on the resolved target/
+origin actor is the only gate needed. A guard against
+`actor.id === message.actor?.id` also exists, for the edge case of a
+self-targeted save (nothing to "worsen" when you're both the caster
+and the one saving).
+
 **Why this doesn't call into `game.pf2e.Check.rerollFromMessage` or
 copy its full implementation**: that method (read in full before
 building this) evaluates a *brand new* d20 roll, then deletes the

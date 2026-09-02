@@ -2,9 +2,9 @@
   "id": "phil-pf2e-hero-points",
   "title": "Homebrew: Hero Points",
   "description": "Homebrew Hero Points house rules for Pathfinder 2e.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "manifest": "https://github.com/behemoth1979/pf2e-hero-points/releases/latest/download/module.json",
-  "download": "https://github.com/behemoth1979/pf2e-hero-points/releases/download/v0.1.3/pf2e-hero-points.zip",
+  "download": "https://github.com/behemoth1979/pf2e-hero-points/releases/download/v0.1.4/pf2e-hero-points.zip",
   "compatibility": {
     "minimum": "12",
     "verified": "14.366"

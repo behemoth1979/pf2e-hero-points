@@ -1,8 +1,30 @@
 /**
  * House rule: right-clicking a check/save roll's chat message offers
- * "Improve Result by 1/2/3 (Hero Point(s))" alongside the system's own
- * "Reroll a Check" options -- spend N Hero Points to raise the degree of
- * success by N steps, capped at critical success/critical save.
+ * "Improve Result by N (Hero Point(s))" (for your own attacks/saves) and
+ * "Worsen Result by N (Hero Point(s))" (for attacks against you, or an
+ * enemy's save against your own spell/effect) alongside the system's own
+ * "Reroll a Check" options -- move the roll's existing degree of success
+ * up or down without rerolling any dice.
+ *
+ * The two directions use different actors' Hero Points and different
+ * message fields to find "whose points can affect this roll":
+ * - Improve (your own roll): the roller (message.actor) spends their own
+ *   points on their own attack/save. Gating requires message.isAuthor ||
+ *   game.user.isGM, same as pf2e's own reroll options.
+ * - Worsen (incoming): the roller here is the OTHER side (the attacker,
+ *   or the enemy making the save) -- the Hero Points spent belong to a
+ *   different actor entirely, found via the roll's own context:
+ *     - attack-roll: context.target.actor is the character being hit.
+ *     - saving-throw: context.origin.actor is the caster whose spell/
+ *       effect provoked this save (confirmed against a real captured
+ *       message and against pf2e's CheckContext.resolve(), which reads
+ *       origin?.actor the same way) -- NOT always populated (e.g. a
+ *       persistent-damage recovery check has origin: null in real
+ *       captured data), in which case the option correctly just doesn't
+ *       appear rather than guessing at who "caused" it.
+ *   Gating for this direction is purely actor.isOwner on that resolved
+ *   actor -- message.isAuthor doesn't apply since the relevant person
+ *   here is never the message's own author (that's the attacker/enemy).
  *
  * FIRST ATTEMPT AT THIS SCRIPT USED THE WRONG MECHANISM ENTIRELY, fixed
  * after live testing showed literally no new context menu options
@@ -70,6 +92,16 @@ const ALLOWED_STEPS_BY_DEGREE = {
   2: [1], // success/hit
 };
 
+// Mirror image of the table above, for worsening an incoming attack or an
+// enemy's save: a critical hit against you is only reversible all-or-nothing
+// (3 points -> critical failure), a hit can drop 1 or 2 degrees, and a miss
+// (already not too bad) can only drop the single remaining degree.
+const INCOMING_ALLOWED_STEPS_BY_DEGREE = {
+  3: [3], // critical success/critical hit (against you)
+  2: [1, 2], // success/hit (against you)
+  1: [1], // failure/miss (against you)
+};
+
 function getContextForLi(li) {
   const messageId = li?.dataset?.messageId;
   const message = messageId ? game.messages.get(messageId) : null;
@@ -91,8 +123,39 @@ function getContextForLi(li) {
   return { message, actor, resource, currentDegree };
 }
 
-async function improveResult(message, steps) {
-  const actor = message.actor;
+function getIncomingContextForLi(li) {
+  const messageId = li?.dataset?.messageId;
+  const message = messageId ? game.messages.get(messageId) : null;
+  if (!message) return null;
+
+  const rollContext = message.flags?.pf2e?.context;
+  if (!rollContext?.outcome) return null;
+
+  const type = rollContext.type;
+  if (type !== "attack-roll" && type !== "saving-throw") return null;
+
+  // attack-roll: the character being hit is the one who gets a say.
+  // saving-throw: the caster whose effect provoked this save is the one
+  // who gets a say -- never the roller, who is the enemy in this case.
+  const relevantUuid = type === "attack-roll" ? rollContext.target?.actor : rollContext.origin?.actor;
+  if (!relevantUuid) return null;
+
+  const resolved = fromUuidSync(relevantUuid);
+  const actor = resolved?.actor ?? resolved;
+  if (!actor?.isOwner) return null;
+  if (actor.id === message.actor?.id) return null; // e.g. a self-targeted save -- nothing to "worsen" here
+
+  const currentDegree = DEGREE_STRINGS.indexOf(rollContext.outcome);
+  if (currentDegree <= 0) return null; // already critical failure/critical miss against them
+
+  const resource = actor.getResource?.("hero-points");
+  if (!resource || resource.value <= 0) return null;
+
+  return { message, actor, resource, currentDegree };
+}
+
+async function adjustResult(message, steps, actor, direction) {
+  // direction: +1 to improve your own roll, -1 to worsen an incoming one.
   const resource = actor?.getResource?.("hero-points");
   if (!actor || !resource || resource.value < steps) {
     ui.notifications.warn(`${actor?.name ?? "This character"} doesn't have enough Hero Points.`);
@@ -106,9 +169,9 @@ async function improveResult(message, steps) {
     return;
   }
 
-  const newDegree = Math.min(oldDegree + steps, 3);
+  const newDegree = Math.min(Math.max(oldDegree + direction * steps, 0), 3);
   if (newDegree === oldDegree) {
-    ui.notifications.info(`${actor.name} is already at critical success.`);
+    ui.notifications.info(`${actor.name}'s result can't be changed any further.`);
     return;
   }
 
@@ -117,14 +180,15 @@ async function improveResult(message, steps) {
   context.outcome = DEGREE_STRINGS[newDegree];
   context.unadjustedOutcome = context.outcome;
 
+  const verb = direction > 0 ? "improves" : "worsens";
   const updateData = {
-    flavor: `${message.flavor ?? ""}<div class="hero-point-improve"><i class="fa-solid fa-hospital-symbol" title="Hero Point"></i> ${actor.name} spends ${steps} Hero Point${steps > 1 ? "s" : ""}: improves the result from <strong>${DEGREE_LABELS[oldDegree]}</strong> to <strong>${DEGREE_LABELS[newDegree]}</strong>.</div>`,
+    flavor: `${message.flavor ?? ""}<div class="hero-point-improve"><i class="fa-solid fa-hospital-symbol" title="Hero Point"></i> ${actor.name} spends ${steps} Hero Point${steps > 1 ? "s" : ""}: ${verb} the result from <strong>${DEGREE_LABELS[oldDegree]}</strong> to <strong>${DEGREE_LABELS[newDegree]}</strong>.</div>`,
     flags: { pf2e: { ...message.flags.pf2e, context } },
   };
 
   // Best-effort: also update the stored roll's own degreeOfSuccess option,
   // so anything reading it directly (rather than the context flag) sees
-  // the improved result too. Wrapped defensively -- if the exact rolls
+  // the changed result too. Wrapped defensively -- if the exact rolls
   // field shape ever changes upstream, the flavor/flag update above still
   // lands and the mechanical change (Hero Points spent, outcome flag
   // updated) still applies correctly either way.
@@ -136,7 +200,7 @@ async function improveResult(message, steps) {
       updateData.rolls = [JSON.stringify(rollData)];
     }
   } catch (error) {
-    console.warn("phil-pf2e-hero-points | Could not update roll's stored degreeOfSuccess:", error);
+    console.warn(DEBUG_PREFIX, "Could not update roll's stored degreeOfSuccess:", error);
   }
 
   await message.update(updateData);
@@ -190,7 +254,21 @@ Hooks.once("init", () => {
         },
         onClick: (_event, li) => {
           const message = game.messages.get(li?.dataset?.messageId);
-          if (message) improveResult(message, steps);
+          if (message) adjustResult(message, steps, message.actor, 1);
+        },
+      });
+      options.push({
+        label: `Worsen Result by ${steps} (${steps} Hero Point${steps > 1 ? "s" : ""})`,
+        icon: "fa-solid fa-hospital-symbol",
+        visible: (li) => {
+          const info = getIncomingContextForLi(li);
+          if (!info) return false;
+          return (INCOMING_ALLOWED_STEPS_BY_DEGREE[info.currentDegree] ?? []).includes(steps) && info.resource.value >= steps;
+        },
+        onClick: (_event, li) => {
+          const message = game.messages.get(li?.dataset?.messageId);
+          const info = message && getIncomingContextForLi(li);
+          if (info) adjustResult(message, steps, info.actor, -1);
         },
       });
     }
