@@ -327,6 +327,24 @@ does, instead of bypassing it with a direct data-path write. The
 path directly (checking `.value` against `.max ?? 3`), per the user's
 own explicit specification.
 
+**Bug found in play, fixed in v0.1.7: every script in this module is
+now wrapped in an IIFE.** Both `improve-with-hero-points.js` and
+`hourly-hero-point.js` declared top-level identifiers directly in the
+page's shared global scope (Foundry loads every enabled module's plain
+`"scripts"` entries as classic `<script>` tags, not isolated per
+module). `hourly-hero-point.js`'s top-level `const MODULE_ID =
+"phil-pf2e-hero-points"` collided with the sibling `pf2e-weredragon`
+module's own identically-named top-level `const MODULE_ID` — whichever
+loaded second threw `Uncaught SyntaxError: Identifier 'MODULE_ID' has
+already been declared` and silently failed to execute at all (in that
+instance, it was `pf2e-weredragon`'s `bizarre-transformation.js` that
+broke). Fixed by wrapping every script file's body in an IIFE
+(`(() => { ... })();`), eliminating this whole class of cross-module
+collision regardless of what identifiers any other module happens to
+use. This is now standing practice for every script added to this
+module going forward, applied proactively to new files from the start
+rather than only after a collision is actually confirmed.
+
 ## Release process (how updates reach Forge)
 
 Same as `pf2e-weredragon`: Forge auto-updates via `module.json`'s

@@ -72,7 +72,22 @@
  * delete-and-recreate approach the real reroll uses) is still unverified
  * without a live session -- the flavor-text note is still added
  * unconditionally so the change is visible either way.
+ *
+ * Wrapped in an IIFE: Foundry loads every enabled module's plain
+ * "scripts" entries as classic (non-module) <script> tags sharing one
+ * global scope, not isolated per module -- confirmed live in the
+ * sibling pf2e-weredragon module, whose own top-level `const MODULE_ID`
+ * collided with this repo's hourly-hero-point.js (same name, same
+ * shared scope) and threw "Identifier 'MODULE_ID' has already been
+ * declared", silently killing whichever script loaded second. Scoping
+ * every top-level declaration inside a function eliminates this whole
+ * class of cross-module collision regardless of what identifiers any
+ * other module happens to use -- applied here as a standing practice
+ * for every script in this module going forward, not just the one
+ * that actually collided.
  */
+
+(() => {
 
 const DEGREE_STRINGS = ["criticalFailure", "failure", "success", "criticalSuccess"];
 const DEGREE_LABELS = ["Critical Failure", "Failure", "Success", "Critical Success"];
@@ -275,3 +290,5 @@ Hooks.once("init", () => {
     return options;
   };
 });
+
+})();

@@ -31,7 +31,20 @@
  * actor.update() on the nested system.resources.heroPoints.value path,
  * so this goes through whatever pf2e's own resource-update handling
  * does rather than bypassing it.
+ *
+ * Wrapped in an IIFE: this file's own top-level `const MODULE_ID` is
+ * exactly what collided with the sibling pf2e-weredragon module's
+ * identically-named top-level `const MODULE_ID` (both loaded as plain,
+ * non-isolated <script> tags sharing one global page scope) -- whoever
+ * loaded second threw "Identifier 'MODULE_ID' has already been
+ * declared" and silently failed to run at all. Scoping every top-level
+ * declaration inside a function eliminates this whole class of
+ * cross-module collision regardless of what identifiers any other
+ * module happens to use -- applied here as a standing practice for
+ * every script in this module going forward.
  */
+
+(() => {
 
 const MODULE_ID = "phil-pf2e-hero-points";
 
@@ -92,3 +105,5 @@ Hooks.once("ready", () => {
     setInterval(grantHourlyHeroPoints, 60 * 60 * 1000);
   }, msUntilNextHour);
 });
+
+})();
