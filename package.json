@@ -11,5 +11,8 @@
   "license": "ISC",
   "dependencies": {
     "@foundryvtt/foundryvtt-cli": "^3.0.4"
+  },
+  "devDependencies": {
+    "archiver": "^8.0.0"
   }
 }

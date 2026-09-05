@@ -351,6 +351,156 @@ use. This is now standing practice for every script added to this
 module going forward, applied proactively to new files from the start
 rather than only after a collision is actually confirmed.
 
+## House rule: Improve Result with Hero Points, extended to pf2e-toolbelt's Target Helper
+
+`scripts/toolbelt-target-helper-integration.js` — extends the "Improve
+Result with Hero Points" house rule (see the section above) to also work
+inside the third-party **pf2e-toolbelt** module's "Target Helper" tool,
+on request. Target Helper adds a per-target row under a spell/check/
+damage chat card (one row per target), each with a d20 icon that turns
+into the rolled degree of success + total once that target's save is
+rolled. The user wanted the same "spend Hero Points to bump the result
+up" option available by interacting with that per-target result, not
+just the main chat-message-level Improve/Worsen options the existing
+script already provides.
+
+Built by cloning and reading pf2e-toolbelt's actual source
+(`github.com/reonZ/pf2e-toolbelt`, v1.5.0) and its `foundry-helpers`
+dependency directly — nothing here is guessed from its UI alone — and
+verified end-to-end against real live data over a Chrome DevTools
+Protocol connection to the dev server (not just read from source), same
+verification standard the sibling `pf2e-weredragon` module established.
+
+**Where the data lives, confirmed from source**: each target's save
+result is stored at `message.flags["pf2e-toolbelt"].targetHelper
+.saveVariants.<variantId>.saves.<targetId>`, shaped as `{success, value,
+die, modifiers, notes, unadjustedOutcome, rerolled, ...}` — directly
+analogous to pf2e's own `context.outcome` the existing script already
+manipulates. **Toolbelt exposes no public API for writing this** — its
+`api.targetHelper` object only has `getMessageTargets`/
+`setMessageFlagTargets`; the actual save-writing method
+(`updateMessageEmitable`) is private to its own bundle. So this script
+reads/writes that flag path directly (the same "confirmed real internal
+shape, write directly, rely on Foundry's standard re-render" approach
+`improve-with-hero-points.js` already uses for pf2e's own private flags)
+and relies on toolbelt's own rendering re-deriving everything fresh from
+message flags on every render — confirmed live: updating just the
+`.success` field (leaving every other required field on the save object
+untouched) makes toolbelt's own degree display and CSS class update
+correctly with no validation errors.
+
+**Problem 1: toolbelt's rendered rows carry no target-id attribute at
+all.** Confirmed by reading its `tool/_targets.ts` and
+`templates/targetHelper/header.hbs` directly — row-to-target association
+exists only as a JS closure inside toolbelt's own row-building code
+(`createTargetsRows`), invisible to an external module. **Asked the user
+directly rather than guessing** which of three tradeoffs to accept
+(recompute toolbelt's own sort order and match by row index; patch
+toolbelt's row-rendering function directly for a real data attribute; or
+skip row-matching entirely via a target-picker dialog) — user chose
+recomputing the sort order. The exact algorithm, copied from that real
+source, only recomputed **once per render** (not per-click — see Problem
+2's fix, which changed this from the original per-click design):
+  - GM: all targets (splash included), sorted ascending by
+    `hasPlayerOwner` then name.
+  - Non-GM: targets with `target.hidden || hasCondition("unnoticed",
+    "undetected")` are skipped entirely (matching toolbelt's own
+    `getTargetRowData`, which returns `undefined` for them, dropped from
+    the rendered list), remaining ones sorted descending by `isOwner`,
+    then descending by `hasPlayerOwner`, then ascending by name.
+**This is fragile by design, not a bug**: if pf2e-toolbelt ever changes
+its own sort/filter logic in a future update, this will silently
+misattribute rows to the wrong target. Re-verify `getSortedVisibleTargets`
+against pf2e-toolbelt's real source whenever it's updated.
+
+**Problem 2, found only through live testing, not source-reading: a
+right-click on anything inside a chat message is hijacked by pf2e's own
+chat-log context menu, no matter which specific nested element is
+clicked.** The first design (right-click the *existing* result icon,
+matching the right-click convention `improve-with-hero-points.js` already
+established) was fully built and live-tested via CDP against a real
+message and real DOM before this was discovered. Confirmed broken: even
+a bare `element.addEventListener("contextmenu", handler)` calling
+`stopImmediatePropagation()` directly on the result icon did not prevent
+pf2e's own chat-log menu from appearing afterward — proving this isn't
+about selector specificity or which element was chosen. Root cause
+(inferred from the DOM event model, not traced to the exact registration
+site): the capture phase runs top-down through every ancestor *before*
+the bubble phase ever reaches the target, and a `stopPropagation` called
+during the later bubble phase can't retroactively cancel whatever an
+ancestor's capture-phase handler already did. Since pf2e's own context
+menu wins this race regardless of which nested element is clicked, *no*
+right-click-based UI nested inside a chat message can reliably out-race
+it.
+
+**Fixed by not using right-click at all.** This script inserts a
+brand-new icon of its own into each eligible row's `.controls` (never
+reusing toolbelt's own `.reroll`/`.observe` elements), with a plain
+`click` listener — confirmed safe from the same hijacking, since
+toolbelt's own `roll-save`/`reroll-save`/`ping-target` actions already
+rely on plain clicks inside the same message without issue. Since the
+icon is inserted fresh at render time (once we already know which target
+each row belongs to, from Problem 1's recomputed list), the target id
+and allowed Hero Point step counts are baked directly into
+`data-target-id`/`data-allowed-steps` attributes on the icon itself —
+the click handler just reads them back, with no need to re-run the
+row-matching algorithm a second time at click time.
+
+**Problem 3, also found only through live testing: toolbelt's own row
+injection is asynchronous, so `.target-row` doesn't exist yet at the
+moment `renderChatMessageHTML` first fires.** Toolbelt's
+`#messageRenderHTML` handler is `async` (it awaits its own Handlebars
+template render), but `Hooks.callAll` doesn't await async listeners —
+confirmed live that `html.querySelectorAll(".target-row")` returns zero
+results at the instant our own hook handler runs, but a bare
+`setTimeout(fn, 0)` was already enough to see the rows once toolbelt's
+own async render actually completes (a microtask-vs-macrotask ordering
+gap, not something needing real wall-clock time). Deferred by 50ms
+regardless, as a pragmatic buffer rather than relying on the exact
+minimum observed — the same "confirmed timing gap, pragmatic buffer, not
+a guaranteed fix" approach the sibling `pf2e-weredragon` module already
+uses in `form-sounds.js`/`bizarre-transformation.js` for the identical
+class of async-render race.
+
+**Menu entry shape, gotcha already documented above for
+`improve-with-hero-points.js`, reused correctly here**: `foundry
+.applications.ux.ContextMenu`'s entries use `label`/`icon`/`visible`/
+`onClick` (not the older `name`/`icon`/`condition`/`callback` shape) —
+confirmed live (a stray `ContextMenuEntry#name is deprecated` warning
+appeared in the captured console log during testing, from an unrelated
+source, further confirming `label` is the current field). Also **must
+pass `jQuery: false`** in `ContextMenu.create()`'s options — omitting it
+doesn't throw, it silently defaults to `jQuery: true` (with its own
+deprecation warning), which wraps every `visible`/`onClick` argument in
+a jQuery object instead of a raw `HTMLElement` — breaking `.closest()`/
+`.parentElement`-style DOM navigation in those callbacks with no visible
+error, just every entry's `visible()` silently returning false. Found
+this the same way as Problem 2: build it, test it live, and only then
+discover the real cause once initial testing produced an empty/wrong
+menu.
+
+**Whose Hero Points get spent**: the target's own actor
+(`target.actor`), not `message.actor` (which here is the *caster*, an
+entirely different actor) — gated on `target.actor?.isOwner ||
+game.user.isGM` alone, mirroring `getIncomingContextForLi()`'s gating in
+`improve-with-hero-points.js` (no `message.isAuthor` check, since the
+message's own author is irrelevant to whether the target's owner can act
+on the target's own save).
+
+**`dosAdjustments` deliberately left untouched, not populated.**
+`TargetSaveInstance` has a real `dosAdjustments` field toolbelt copies
+verbatim from the underlying roll's own pf2e `CheckContext` (used for its
+own tooltip's "why did this change" text), but its `amount` field is a
+real pf2e enum whose exact valid values were never confirmed against
+live data (no example ever appeared on a captured message during this
+feature's development). Guessing wrong risked either a Zod validation
+failure on the whole saves object (breaking toolbelt's rendering
+entirely for that target) or silently wrong tooltip text. Used the same
+safer mechanism the main script's own flavor-text note relies on
+instead: appended a real note (`TargetSaveInstance.notes`, the same
+`RollNotePF2e`-backed field toolbelt already renders for its own notes)
+announcing the change in plain text.
+
 ## Release process (how updates reach Forge)
 
 Same as `pf2e-weredragon`: Forge auto-updates via `module.json`'s
@@ -362,9 +512,16 @@ Releases (not raw branch files).
    version tag (the `"manifest"` URL stays constant — it always
    resolves to `releases/latest`).
 3. Commit + push.
-4. Run `node build.mjs` if source changed, and re-zip the module
-   contents (module.json, packs/, src/, build.mjs, README.md — NOT
-   node_modules or .git).
+4. Run `node build.mjs` if source changed, then `node
+   build-release-zip.mjs` to produce `pf2e-hero-points.zip` (module.json,
+   scripts/, build.mjs, README.md, plus packs/ and src/ once they exist —
+   NOT node_modules or .git). **Don't zip this by hand with PowerShell's
+   `Compress-Archive`** — ported from `pf2e-weredragon`'s own fix:
+   confirmed (by inspecting a past release zip's raw central-directory
+   bytes) that it stores every nested path with a literal backslash
+   instead of the zip-spec-required forward slash. `build-release-zip.mjs`
+   uses `archiver`, which always writes forward slashes regardless of
+   host OS.
 5. On github.com: repo → Releases → "Create a new release" → tag it
    `vX.Y.Z` matching `module.json` → attach both the zip and a
    standalone copy of `module.json` → publish.
