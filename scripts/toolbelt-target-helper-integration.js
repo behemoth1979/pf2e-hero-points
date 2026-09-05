@@ -78,6 +78,22 @@
  * `reroll-save`/`ping-target` actions already rely on plain clicks inside
  * the same message without issue.
  *
+ * **Bug found in play, fixed in v0.2.1: the menu only ever showed a tiny
+ * sliver near the icon, clicking blind into it still worked.** The icon
+ * sits inside the chat sidebar, which is docked to the right edge of the
+ * screen -- close enough that the popup menu's own width pushed most of
+ * it off-screen. Root-caused by reading `ContextMenu`'s real
+ * `_setPosition()` directly: with the default `fixed: false`, it calls
+ * `_injectMenu()`, which only ever checks for *vertical* overflow
+ * (`expand-up` vs `expand-down`) -- there is no horizontal check at all
+ * in that code path, so a menu anchored near the right edge of the
+ * viewport has nothing preventing it from rendering mostly off-screen.
+ * `fixed: true` instead routes through `_setFixedPosition()`, which
+ * explicitly clamps horizontally (`menu.style.left = Math.min(clientX,
+ * clientWidth - width)`) -- confirmed live (via CDP against the dev
+ * server) that the menu's bounding rect extended past `window.innerWidth`
+ * with `fixed` unset, and stayed fully on-screen once set.
+ *
  * **Whose Hero Points get spent**: the target's own actor
  * (`target.actor`), not `message.actor` (which here is the *caster*, an
  * entirely different actor) -- gated on `target.actor?.isOwner ||
@@ -276,6 +292,7 @@ function addImproveIcons(message, html, data) {
   foundry.applications.ux.ContextMenu.create({}, html, `.${ICON_CLASS}`, menuItems, {
     eventName: "click",
     jQuery: false,
+    fixed: true,
   });
 }
 
